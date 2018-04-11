@@ -14,11 +14,11 @@ def main():
 
     experiments = [
             ('data/pos_vocab.txt', 'pos_tag'),
-            #('data/dep_vocab.txt', 'dep_label'),
-            #('data/dep_vocab.txt', 'next_dep'),
-            #('data/dep_vocab.txt', 'prev_dep'),
-            #('data/pos_vocab.txt', 'prev_pos'),
-            #('data/pos_vocab.txt', 'next_pos'),
+            ('data/dep_vocab.txt', 'dep_label'),
+            ('data/pos_vocab.txt', 'prev_pos'),
+            ('data/pos_vocab.txt', 'next_pos'),
+            ('data/dep_vocab.txt', 'prev_dep'),
+            ('data/dep_vocab.txt', 'next_dep'),
             ]
 
 
@@ -26,8 +26,8 @@ def main():
 
     results = {}
     for vocab_file, label_field in experiments:
-        weight_file = 'results/skip/%s_weights.h5' % label_field
-        data_dir = 'data_skip/'
+        weight_file = 'results/skip_ft/%s_weights.h5' % label_field
+        data_dir = 'data_skip_ft/'
         vector_dim = 1024
         token_to_index, index_to_token = read_vocab(vocab_file)
         print("Running experiment for", label_field)

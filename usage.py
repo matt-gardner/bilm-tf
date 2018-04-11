@@ -115,31 +115,17 @@ def convert_file(batcher, context_character_ids, context_embeddings_op, token_fi
     # Now we can compute embeddings.
     sentences = tokens_from_conll_file(token_file)
     grouped_sentences = group_by_count(sentences, 100)
-    with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-        # It is necessary to initialize variables once before running inference.
-        sess.run(tf.global_variables_initializer())
-
+    if COVE:
+        vocab = batcher
+        cove_model = context_embeddings_op
         for batch_num, sentence_group in tqdm.tqdm(list(enumerate(grouped_sentences))):
             sentence_text = [[token.text for token in sentence] for sentence in sentence_group]
-            if COVE:
-                vocab = batcher
-                cove_model = context_embeddings_op
-                X_token_ids = vocab.batch_sentences_to_X(sentence_text)['tokens']
-                cove_embeddings = cove_model.predict_on_batch(X_token_ids)
-                # Duplicate the first layer, so that we have a uniformly-shaped tensor.
-                cove_embeddings[0] = numpy.concatenate([cove_embeddings[0], cove_embeddings[0]], axis=-1)
-                # This gives us the same shape result as we have with the non-CoVe case.
-                context_embeddings = [numpy.stack(cove_embeddings, axis=1)]
-            else:
-                # Create batches of data.
-                context_ids = batcher.batch_sentences(sentence_text)
-
-                # Compute LM embeddings.
-                context_embeddings = sess.run(
-                    [context_embeddings_op],
-                    feed_dict={context_character_ids: context_ids}
-                )
-
+            X_token_ids = vocab.batch_sentences_to_X(sentence_text)['tokens']
+            cove_embeddings = cove_model.predict_on_batch(X_token_ids)
+            # Duplicate the first layer, so that we have a uniformly-shaped tensor.
+            cove_embeddings[0] = numpy.concatenate([cove_embeddings[0], cove_embeddings[0]], axis=-1)
+            # This gives us the same shape result as we have with the non-CoVe case.
+            context_embeddings = [numpy.stack(cove_embeddings, axis=1)]
             token_jsons = []
             token_embeddings = []
             for sentence_tokens, sentence_embeddings in zip(sentence_group, context_embeddings[0]):
@@ -161,6 +147,43 @@ def convert_file(batcher, context_character_ids, context_embeddings_op, token_fi
                 out.create_dataset('embeddings', data=token_embeddings)
             with open(out_dir + 'batch_%d_tokens.json' % batch_num, 'w') as out:
                 json.dump(token_jsons, out, indent=2)
+    else:
+        with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+            # It is necessary to initialize variables once before running inference.
+            sess.run(tf.global_variables_initializer())
+
+            for batch_num, sentence_group in tqdm.tqdm(list(enumerate(grouped_sentences))):
+                sentence_text = [[token.text for token in sentence] for sentence in sentence_group]
+                # Create batches of data.
+                context_ids = batcher.batch_sentences(sentence_text)
+
+                # Compute LM embeddings.
+                context_embeddings = sess.run(
+                    [context_embeddings_op],
+                    feed_dict={context_character_ids: context_ids}
+                )
+
+                token_jsons = []
+                token_embeddings = []
+                for sentence_tokens, sentence_embeddings in zip(sentence_group, context_embeddings[0]):
+                    embedding = sentence_embeddings
+                    for i, token in enumerate(sentence_tokens):
+                        token_json = {
+                                'text': token.text,
+                                'pos_tag': token.pos_tag,
+                                'dep_label': token.dep_label,
+                                'prev_pos': token.prev_pos,
+                                'prev_dep': token.prev_dep,
+                                'next_pos': token.next_pos,
+                                'next_dep': token.next_dep,
+                                }
+                        token_embeddings.append([embedding[j][i, :] for j in range(3)])
+                        token_jsons.append(token_json)
+                token_embeddings = numpy.asarray(token_embeddings)
+                with h5py.File(out_dir + 'batch_%d_embeddings.h5' % batch_num, 'w') as out:
+                    out.create_dataset('embeddings', data=token_embeddings)
+                with open(out_dir + 'batch_%d_tokens.json' % batch_num, 'w') as out:
+                    json.dump(token_jsons, out, indent=2)
 
 
 if __name__ == '__main__':
